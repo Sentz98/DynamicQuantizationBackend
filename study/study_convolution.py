@@ -169,9 +169,9 @@ if __name__ == "__main__":
             key = f"channels_{output_channels}_size_{image_size[0]}x{image_size[1]}"
             all_results[key] = study.run_experiment(output_channels, image_size, repetitions=args.repetitions)
 
-    # Save and plot results for one configuration as an example
+    # Save and plot results 
     study.save_results(all_results, filename=args.results_file)
 
-    # study.plot_error_trends(all_results)
+    study.plot_error_trends(all_results)
 
     study.plot_approaches_for_channels(all_results, channels=4)

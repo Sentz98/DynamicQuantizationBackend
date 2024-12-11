@@ -4,9 +4,7 @@ import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
 from tqdm import tqdm
-import copy
 import os
-from quant_fn import Qtensor, quantize_tensor, dequantize_tensor
 from convert import QuantizedNetwork
 
 
@@ -57,15 +55,13 @@ def train_model(model, train_loader, criterion, optimizer, device, epochs=10):
 
 
 # Evaluate the model
-def evaluate_model(model, test_loader, device, quantized=False):
+def evaluate_model(model, test_loader, device):
     model.eval()
     correct = 0
     total = 0
     with torch.no_grad():
         for inputs, labels in test_loader:
             inputs, labels = inputs.to(device), labels.to(device)
-            if quantized:
-                inputs = quantize_tensor(inputs, per_channel=True, cast=False)
             outputs = model(inputs)
             _, predicted = torch.max(outputs, 1)
             total += labels.size(0)
@@ -160,18 +156,17 @@ def main(model_path):
     #print(model)
 
     # Quantize model
-    cmodel = QuantizedNetwork(model.network, symmetric=False, per_channel=False, estimate=False)
-    
-    print("Regular Dynamic Quantized model")
+    cmodel = QuantizedNetwork(model.network, symmetric=True, per_channel=False, estimate=False)
+    print("Regular Dynamic Symmetric Quantized model")
     evaluate_model(cmodel,test_loader,device)
 
-    # #print(quantized_network)
-
-    cmodel2 = QuantizedNetwork(model.network, symmetric=True, per_channel=False, estimate=True)
-    print("Estimated Dynamic Quantized model")
+    cmodel2 = QuantizedNetwork(model.network, symmetric=False, per_channel=False, estimate=False)
+    print("Regular Dynamic Asymmetric Quantized model")
     evaluate_model(cmodel2,test_loader,device)
 
-    #print(quantized_network2)
+    cmodel3 = QuantizedNetwork(model.network, symmetric=True, per_channel=False, estimate=True)
+    print("Estimated Dynamic Symmetric Quantized model")
+    evaluate_model(cmodel3,test_loader,device)
 
 
 if __name__ == "__main__":

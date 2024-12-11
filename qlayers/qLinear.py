@@ -51,10 +51,11 @@ class QuantizedLinear(nn.Module):
 
         # The bias is managed outside of conv operation bc need to bee shifted accordingly to input scale
         # so wont work with torch convolutional logic
-        bias = self.fp_bias.unsqueeze(0)
-        bias = bias[(...,) + (None,) * (linear_result.ndim - bias.ndim)]
-        qbias = torch.round( bias / (self.qweight.scale.item() * sc))
-        linear_result += qbias
+        if self.bias:
+            bias = self.fp_bias.unsqueeze(0)
+            bias = bias[(...,) + (None,) * (linear_result.ndim - bias.ndim)]
+            qbias = torch.round(bias / (self.qweight.scale.item() * sc))
+            linear_result += qbias
 
         if self.estimate:
             q_min, q_max = estimateOutputRange(x.tensor, self.qweight.tensor, .5, self.per_channel)
@@ -62,7 +63,7 @@ class QuantizedLinear(nn.Module):
         else: 
             # Quantize the output
             quantized_result = quantize_tensor(linear_result, symmetric=self.symmetric, per_channel=self.per_channel)
-
+        
         # Update scale
         quantized_result.scale = quantized_result.scale * x.scale * self.qweight.scale
         return quantized_result

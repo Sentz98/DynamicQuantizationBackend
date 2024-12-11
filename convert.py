@@ -35,7 +35,7 @@ def substitute_quant_layers(module:nn.Sequential, symmetric=True, per_channel=Fa
             module.add_module(name, quantized_conv)
 
         elif isinstance(child, nn.ReLU):
-            quantized_relu = QuantizedRelu()
+            quantized_relu = QuantizedRelu(symmetric)
             module.add_module(name, quantized_relu)
 
         elif isinstance(child, nn.MaxPool2d):
@@ -58,7 +58,7 @@ class QuantizedNetwork(nn.Module):
 
     def forward(self, x, collect_activations=False):  
         x = self.quant(x)
-
+        
         activations = []
         for layer in self.network:
             x = layer(x)
@@ -66,6 +66,6 @@ class QuantizedNetwork(nn.Module):
                 activations.append(x)
                 
         x = self.dequant(x)
-        # breakpoint()
+        
         return (x, activations) if collect_activations else x
 

@@ -69,7 +69,7 @@ class QuantizedConv2d(nn.Module):
         bias = self.fp_bias.unsqueeze(0)
         bias = bias[(...,) + (None,) * (conv_result.ndim - bias.ndim)]
         qbias = torch.round( bias / (self.qweight.scale.item() * sc))
-        conv_result += + qbias
+        conv_result += qbias
 
         if self.estimate:
             q_min, q_max = estimateConvOutputRange(x.tensor, self.qweight.tensor, .5, self.per_channel)
