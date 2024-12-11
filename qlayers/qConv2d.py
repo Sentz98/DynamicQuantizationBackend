@@ -30,8 +30,6 @@ class QuantizedConv2d(nn.Module):
         self.per_channel = per_channel
         self.estimate = estimate
 
-        if self.estimate:
-            print("created estimating layer")
 
         # Quantize weights
         self.qweight = quantize_tensor(

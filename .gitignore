@@ -1,6 +1,9 @@
 # Ignore data directory
 data/
 
+study/*.json
+study/*.png
+
 # Ignore VSCode settings
 .vscode/
 

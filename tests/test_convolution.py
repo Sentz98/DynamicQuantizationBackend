@@ -17,7 +17,7 @@ class TestQuantizedConv2d(unittest.TestCase):
         # Set up argument parser
         parser = argparse.ArgumentParser(description="Test Quantization")
         parser.add_argument("--tolerance", type=float, default=5e-4, help="Tolerable MSE threshold")
-        parser.add_argument("--size", type=int, nargs=4, default=[1, 3, 3, 3], help="Size of the input tensor (N, C, H, W)")
+        parser.add_argument("--size", type=int, nargs=4, default=[100, 3, 100, 100], help="Size of the input tensor (N, C, H, W)")
         parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
         args, _ = parser.parse_known_args()
 
@@ -28,7 +28,7 @@ class TestQuantizedConv2d(unittest.TestCase):
 
     def setUp(self):
         # Create and initialize the original Conv2d layer
-        self.conv_layer = nn.Conv2d(in_channels=3, out_channels=1, kernel_size=3, stride=1, padding=1)
+        self.conv_layer = nn.Conv2d(in_channels=3, out_channels=6, kernel_size=3, stride=1, padding=1)
         nn.init.normal_(self.conv_layer.weight, mean=0.0, std=0.02)  # Random initialization for weights
 
         # Define a sample input tensor
