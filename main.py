@@ -6,6 +6,8 @@ import torchvision.transforms as transforms
 from tqdm import tqdm
 import os
 from convert import QuantizedNetwork
+import matplotlib.pyplot as plt
+from quant_fn import Qtensor
 
 
 class SimpleCNN(nn.Module):
@@ -25,13 +27,15 @@ class SimpleCNN(nn.Module):
         )
 
     def forward(self, x, collect_activations=False):
-        activations = []
+        activations = {} if collect_activations else None
         for layer in self.network:
             x = layer(x)
             if collect_activations:
-                activations.append(x)
-        # return (x, activations) if collect_activations else x
-        return x
+                # Use the layer's class name and ID as the key
+                layer_name = f"{layer.__class__.__name__}_{id(layer)}"
+                activations[layer_name] = x
+
+        return (x, activations) if collect_activations else x
 
 
 # Train the model
@@ -86,38 +90,43 @@ def load_model(path="simple_cnn.pth", device=torch.device('cpu')):
         print(f"No saved model found at {path}. Training a new model.")
     return model
 
-def test_models_single_input(model, cmodel, cmodel2, input_image, device):
+def test_models_single_input(model, loader, device):
     # Ensure evaluation mode
     model.eval()
-    cmodel.eval()
-    cmodel2.eval()
 
-    # Move input to the appropriate device
-    input_image = input_image.to(device)
+    inputs, labels = next(iter(loader))
+    inputs, labels = inputs.to(device), labels.to(device)
 
     # Forward pass through the FP model
     with torch.no_grad():
-        fp_output = model(input_image.unsqueeze(0))  # Add batch dimension
+        fp_output, activations = model(inputs, collect_activations=True)
         fp_pred = torch.argmax(fp_output, dim=1)
 
-    print(f"Floating-point model output: {fp_output}")
-    print(f"Floating-point model predicted class: {fp_pred.item()}")
+    # Plot histograms of activations
+    if activations:
+        num_layers = len(activations)
+        rows = 2
+        cols = (num_layers + 1) // rows
+        fig, axes = plt.subplots(rows, cols, figsize=(5 * cols, 5 * rows))
+        axes = axes.flatten()  # Flatten in case of multi-row layout
 
-    # Forward pass through the regular quantized model
-    with torch.no_grad():
-        q_output = cmodel(input_image.unsqueeze(0))  # Add batch dimension
-        q_pred = torch.argmax(q_output, dim=1)
+        for ax, (layer_name, activation) in zip(axes, activations.items()):
+            if type(activation) == Qtensor:
+                activation = activation.tensor * activation.scale
+            ax.hist(activation.cpu().numpy().flatten(), bins=50, color='blue', alpha=0.7)
+            ax.set_title(f"{layer_name}")
+            ax.set_xlabel("Activation Value")
+            ax.set_ylabel("Frequency")
 
-    print(f"Regular quantized model output: {q_output}")
-    print(f"Regular quantized model predicted class: {q_pred.item()}")
+        # Hide any unused subplots
+        for ax in axes[len(activations):]:
+            ax.axis('off')
 
-    # Forward pass through the estimated quantized model
-    with torch.no_grad():
-        q_est_output = cmodel2(input_image.unsqueeze(0))  # Add batch dimension
-        q_est_pred = torch.argmax(q_est_output, dim=1)
+        plt.tight_layout()
+        plt.show()
 
-    print(f"Estimated quantized model output: {q_est_output}")
-    print(f"Estimated quantized model predicted class: {q_est_pred.item()}")
+
+    
 
 
 
@@ -135,7 +144,7 @@ def main(model_path):
     test_dataset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
 
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=128, shuffle=True, num_workers=2)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=10, shuffle=False, num_workers=2)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=2)
 
     # Training Parameters
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -153,22 +162,22 @@ def main(model_path):
     print("FP model")
     evaluate_model(model, test_loader, device)
 
-    #print(model)
-
     # Quantize model
     cmodel = QuantizedNetwork(model.network, symmetric=True, per_channel=False, estimate=False)
-    print("Regular Dynamic Symmetric Quantized model")
-    evaluate_model(cmodel,test_loader,device)
+    # print("Regular Dynamic Symmetric Quantized model")
+    # evaluate_model(cmodel,test_loader,device)
 
     cmodel2 = QuantizedNetwork(model.network, symmetric=False, per_channel=False, estimate=False)
-    print("Regular Dynamic Asymmetric Quantized model")
-    evaluate_model(cmodel2,test_loader,device)
+    # print("Regular Dynamic Asymmetric Quantized model")
+    # evaluate_model(cmodel2,test_loader,device)
 
-    cmodel3 = QuantizedNetwork(model.network, symmetric=True, per_channel=False, estimate=True)
-    print("Estimated Dynamic Symmetric Quantized model")
-    evaluate_model(cmodel3,test_loader,device)
+    # cmodel3 = QuantizedNetwork(model.network, symmetric=True, per_channel=False, estimate=True, alpha=0.001)
+    # print("Estimated Dynamic Symmetric Quantized model")
+    # evaluate_model(cmodel3,test_loader,device)
 
+    test_models_single_input(model, test_loader, device)
 
+    test_models_single_input(cmodel2, test_loader, device)
 if __name__ == "__main__":
     model_path = "simple_cnn.pth"
     main(model_path)

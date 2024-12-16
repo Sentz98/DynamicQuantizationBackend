@@ -3,7 +3,7 @@ from torch import nn
 from quant_fn import Qtensor, quantize_tensor
 
 class QuantizedConv2d(nn.Module):
-    def __init__(self, conv_layer, symmetric=True, per_channel=False, estimate=False):
+    def __init__(self, conv_layer, symmetric=True, per_channel=False, estimate=False, alpha=0.1, verbose = False):
         """
         Converts a trained nn.Conv2d layer into a quantized version.
 
@@ -23,13 +23,16 @@ class QuantizedConv2d(nn.Module):
         self.padding = conv_layer.padding
         self.dilation = conv_layer.dilation
         self.groups = conv_layer.groups
-        self.bias = conv_layer.bias is not None
+        self.bias = conv_layer.bias
 
         # Store quantization arguments
         self.symmetric = symmetric
         self.per_channel = per_channel
         self.estimate = estimate
+        self.alpha = alpha
 
+        # Logging
+        self.verbose = verbose
 
         # Quantize weights
         self.qweight = quantize_tensor(
@@ -38,11 +41,28 @@ class QuantizedConv2d(nn.Module):
                             symmetric=True,
                             per_channel=self.per_channel
                         )
-        self.fp_bias = conv_layer.bias
-
+        
         if self.estimate and (per_channel or not symmetric):
             raise NotImplementedError("HEHE volevi")
+    
+    def estimateConvOutputRange(self, input, weight):        
+        positive_w_sum = torch.sum(weight[weight > 0])
+        negative_w_sum = torch.sum(weight[weight < 0])
+
+        input_min = input.amin(dim=[1,2,3], keepdim=False)
+        input_max = input.amax(dim=[1,2,3], keepdim=False)
+
+        if self.verbose:
+            print(f"Input range [{input_min}, {input_max}]")
+
+        # Calculate q_min and q_max as tensors
+        q_min = (input_max * negative_w_sum + input_min * positive_w_sum) * self.alpha
+        q_max = (input_min * negative_w_sum + input_max * positive_w_sum) * self.alpha
+
+        if self.verbose:
+            print(f"Estimated output range [{q_min}, {q_max}]")
         
+        return q_min , q_max
 
     def forward(self, x):
         if not isinstance(x, Qtensor):
@@ -66,13 +86,15 @@ class QuantizedConv2d(nn.Module):
 
         # The bias is managed outside of conv operation bc need to bee shifted accordingly to input scale
         # so wont work with torch convolutional logic
-        bias = self.fp_bias.unsqueeze(0)
+        bias = self.bias.unsqueeze(0)
         bias = bias[(...,) + (None,) * (conv_result.ndim - bias.ndim)]
         qbias = torch.round( bias / (self.qweight.scale.item() * sc))
         conv_result += qbias
 
         if self.estimate:
-            q_min, q_max = estimateConvOutputRange(x.tensor, self.qweight.tensor, .5, self.per_channel)
+            q_min, q_max = self.estimateConvOutputRange(x.tensor, self.qweight.tensor)
+            if self.verbose:
+                print(f"Theoretical output range [{conv_result.amin(dim=[1,2,3], keepdim=False)}, {conv_result.amax(dim=[1,2,3], keepdim=False)}]")
             quantized_result = quantize_tensor(conv_result, q_min, q_max, symmetric=True, per_channel=False)
         else: 
             # Quantize the output
@@ -81,20 +103,4 @@ class QuantizedConv2d(nn.Module):
         # Update scale
         quantized_result.scale = quantized_result.scale * x.scale * self.qweight.scale
         return quantized_result
-    
-def estimateConvOutputRange(input, weight, alpha, per_channel):
-    if per_channel:
-        raise NotImplementedError("HEHE volevi")
-    
-    positive_w_sum = torch.sum(weight[weight > 0])
-    negative_w_sum = torch.sum(weight[weight < 0])
-
-    input_min = input.amin(dim=[1,2,3], keepdim=False)
-    input_max = input.amax(dim=[1,2,3], keepdim=False)
-
-    # Calculate q_min and q_max as tensors
-    q_min = (input_max * negative_w_sum + input_min * positive_w_sum) * alpha
-    q_max = (input_min * negative_w_sum + input_max * positive_w_sum) * alpha
-    
-    return q_min , q_max
 
